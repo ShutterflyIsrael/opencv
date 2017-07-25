@@ -6,6 +6,7 @@
  * @author Pablo F. Alcantarilla, Jesus Nuevo
  */
 
+
 #include "../precomp.hpp"
 #include "AKAZEFeatures.h"
 #include "fed.h"
@@ -54,7 +55,7 @@ void AKAZEFeatures::Allocate_Memory_Evolution(void) {
     level_width = (int)(options_.img_width*rfactor);
 
     // Smallest possible octave and allow one scale if the image is small
-    if ((level_width < 80 || level_height < 40) && i != 0) {
+    if ((level_width < 24 || level_height < 24) && i != 0) {
       options_.omax = i;
       break;
     }
@@ -97,45 +98,61 @@ void AKAZEFeatures::Allocate_Memory_Evolution(void) {
  * @param img Input image for which the nonlinear scale space needs to be created
  * @return 0 if the nonlinear scale space was created successfully, -1 otherwise
  */
+
+
+ 
+ 
 int AKAZEFeatures::Create_Nonlinear_Scale_Space(const Mat& img)
 {
   CV_Assert(evolution_.size() > 0);
+ 
+ img.copyTo(evolution_[0].Lt);
 
-  // Copy the original image to the first level of the evolution
-  img.copyTo(evolution_[0].Lt);
-  gaussian_2D_convolution(evolution_[0].Lt, evolution_[0].Lt, 0, 0, options_.soffset);
+  gaussian_2D_convolution(evolution_[0].Lt, evolution_[0].Lt, 0, 0, options_.soffset);//2.14
   evolution_[0].Lt.copyTo(evolution_[0].Lsmooth);
-
+  
   // Allocate memory for the flow and step images
-  Mat Lflow = Mat::zeros(evolution_[0].Lt.rows, evolution_[0].Lt.cols, CV_32F);
-  Mat Lstep = Mat::zeros(evolution_[0].Lt.rows, evolution_[0].Lt.cols, CV_32F);
+  Mat Lflow = Mat(evolution_[0].Lt.rows, evolution_[0].Lt.cols, CV_32F);
+  Mat Lstep = Mat(evolution_[0].Lt.rows, evolution_[0].Lt.cols, CV_32F);
 
+ 
   // First compute the kcontrast factor
-  options_.kcontrast = compute_k_percentile(img, options_.kcontrast_percentile, 1.0f, options_.kcontrast_nbins, 0, 0);
-
+ 
+  //options_.kcontrast = compute_k_percentile(img, options_.kcontrast_percentile, 1.0f, options_.kcontrast_nbins, 0, 0);//10
+  
+	
+   
+  options_.kcontrast=.01;
   // Now generate the rest of evolution levels
-  for (size_t i = 1; i < evolution_.size(); i++) {
+  for (size_t i = 1; i < evolution_.size(); i++)
+ {
+ 
+    if (evolution_[i].octave > evolution_[i - 1].octave)
+	{ 
 
-    if (evolution_[i].octave > evolution_[i - 1].octave) {
-      halfsample_image(evolution_[i - 1].Lt, evolution_[i].Lt);
-      options_.kcontrast = options_.kcontrast*0.75f;
-
+      halfsample_image(evolution_[i - 1].Lt, evolution_[i].Lt);//12.7
+	  options_.kcontrast = options_.kcontrast*0.75f;
+	
       // Allocate memory for the resized flow and step images
-      Lflow = Mat::zeros(evolution_[i].Lt.rows, evolution_[i].Lt.cols, CV_32F);
-      Lstep = Mat::zeros(evolution_[i].Lt.rows, evolution_[i].Lt.cols, CV_32F);
+	
+     Lflow = Mat(evolution_[i].Lt.rows, evolution_[i].Lt.cols, CV_32F);//2.3
+     Lstep = Mat(evolution_[i].Lt.rows, evolution_[i].Lt.cols, CV_32F);
+	
     }
-    else {
-      evolution_[i - 1].Lt.copyTo(evolution_[i].Lt);
+    else
+	{
+   
+      evolution_[i - 1].Lt.copyTo(evolution_[i].Lt); // 3.6
+	
     }
 
-    gaussian_2D_convolution(evolution_[i].Lt, evolution_[i].Lsmooth, 0, 0, 1.0f);
+  gaussian_2D_convolution(evolution_[i].Lt, evolution_[i].Lsmooth, 0, 0, 1.0f);//12.5//5.5
+  image_derivatives_scharr(evolution_[i].Lsmooth, evolution_[i].Lx, 1, 0);//7.15
+  image_derivatives_scharr(evolution_[i].Lsmooth, evolution_[i].Ly, 0, 1);
 
-    // Compute the Gaussian derivatives Lx and Ly
-    image_derivatives_scharr(evolution_[i].Lsmooth, evolution_[i].Lx, 1, 0);
-    image_derivatives_scharr(evolution_[i].Lsmooth, evolution_[i].Ly, 0, 1);
-
-    // Compute the conductivity equation
-    switch (options_.diffusivity) {
+          
+    switch (options_.diffusivity)
+	{
       case KAZE::DIFF_PM_G1:
         pm_g1(evolution_[i].Lx, evolution_[i].Ly, Lflow, options_.kcontrast);
       break;
@@ -146,21 +163,25 @@ int AKAZEFeatures::Create_Nonlinear_Scale_Space(const Mat& img)
         weickert_diffusivity(evolution_[i].Lx, evolution_[i].Ly, Lflow, options_.kcontrast);
       break;
       case KAZE::DIFF_CHARBONNIER:
-        charbonnier_diffusivity(evolution_[i].Lx, evolution_[i].Ly, Lflow, options_.kcontrast);
+        charbonnier_diffusivity(evolution_[i].Lx, evolution_[i].Ly, Lflow, options_.kcontrast);//2.6
       break;
       default:
         CV_Error(options_.diffusivity, "Diffusivity is not supported");
       break;
     }
-
+	
     // Perform FED n inner steps
-    for (int j = 0; j < nsteps_[i - 1]; j++) {
-      nld_step_scalar(evolution_[i].Lt, Lflow, Lstep, tsteps_[i - 1][j]);
+    for (int j = 0; j < nsteps_[i - 1]; j++) 
+	{
+      nld_step_scalar(evolution_[i].Lt, Lflow, Lstep, tsteps_[i - 1][j]);//50//16
     }
+	;
   }
 
+ 
   return 0;
 }
+
 
 /* ************************************************************************* */
 /**
@@ -169,10 +190,15 @@ int AKAZEFeatures::Create_Nonlinear_Scale_Space(const Mat& img)
  */
 void AKAZEFeatures::Feature_Detection(std::vector<KeyPoint>& kpts)
 {
+ 
+
   kpts.clear();
   Compute_Determinant_Hessian_Response();
+   
   Find_Scale_Space_Extrema(kpts);
   Do_Subpixel_Refinement(kpts);
+ 
+
 }
 
 /* ************************************************************************* */
@@ -191,20 +217,21 @@ public:
 
     for (int i = range.start; i < range.end; i++)
     {
-      float ratio = (float)fastpow(2, evolution[i].octave);
+        float ratio = (float)fastpow(2, evolution[i].octave);
       int sigma_size_ = fRound(evolution[i].esigma * options_.derivative_factor / ratio);
-
-      compute_scharr_derivatives(evolution[i].Lsmooth, evolution[i].Lx, 1, 0, sigma_size_);
-      compute_scharr_derivatives(evolution[i].Lsmooth, evolution[i].Ly, 0, 1, sigma_size_);
-      compute_scharr_derivatives(evolution[i].Lx, evolution[i].Lxx, 1, 0, sigma_size_);
+	 
+     compute_scharr_derivatives(evolution[i].Lsmooth, evolution[i].Lx, 1, 0, sigma_size_);
+     compute_scharr_derivatives(evolution[i].Lsmooth, evolution[i].Ly, 0, 1, sigma_size_);
+	
+     compute_scharr_derivatives(evolution[i].Lx, evolution[i].Lxx, 1, 0, sigma_size_);
       compute_scharr_derivatives(evolution[i].Ly, evolution[i].Lyy, 0, 1, sigma_size_);
       compute_scharr_derivatives(evolution[i].Lx, evolution[i].Lxy, 0, 1, sigma_size_);
-
-      evolution[i].Lx = evolution[i].Lx*((sigma_size_));
-      evolution[i].Ly = evolution[i].Ly*((sigma_size_));
+	
+     evolution[i].Lx = evolution[i].Lx*((sigma_size_));
+     evolution[i].Ly = evolution[i].Ly*((sigma_size_));
       evolution[i].Lxx = evolution[i].Lxx*((sigma_size_)*(sigma_size_));
       evolution[i].Lxy = evolution[i].Lxy*((sigma_size_)*(sigma_size_));
-      evolution[i].Lyy = evolution[i].Lyy*((sigma_size_)*(sigma_size_));
+     evolution[i].Lyy = evolution[i].Lyy*((sigma_size_)*(sigma_size_));
     }
   }
 
@@ -228,13 +255,21 @@ void AKAZEFeatures::Compute_Multiscale_Derivatives(void)
  * @brief This method computes the feature detector response for the nonlinear scale space
  * @note We use the Hessian determinant as the feature detector response
  */
-void AKAZEFeatures::Compute_Determinant_Hessian_Response(void) {
+void AKAZEFeatures::Compute_Determinant_Hessian_Response(void)
+{
 
   // Firstly compute the multiscale derivatives
-  Compute_Multiscale_Derivatives();
-
+ 
+	Compute_Multiscale_Derivatives();
+ 
   for (size_t i = 0; i < evolution_.size(); i++)
-  {
+  {  
+	/*  float ratio = (float)fastpow(2, evolution_[i].octave);
+      int sigma_size_ = fRound(evolution_[i].esigma * options_.derivative_factor / ratio);
+	  image_derivatives_scharr_asm(evolution_[i].Lsmooth,evolution_[i].Lx ,evolution_[i].Ly ,sigma_size_);
+	    image_derivatives_scharr_asm(evolution_[i].Ly,evolution_[i].Lxy ,evolution_[i].Lyy ,sigma_size_);
+	   image_derivatives_scharr_asm(evolution_[i].Lx,evolution_[i].Lxx ,evolution_[i].Lxy ,sigma_size_);
+     */
     for (int ix = 0; ix < evolution_[i].Ldet.rows; ix++)
     {
       for (int jx = 0; jx < evolution_[i].Ldet.cols; jx++)
@@ -246,6 +281,7 @@ void AKAZEFeatures::Compute_Determinant_Hessian_Response(void) {
       }
     }
   }
+ 
 }
 
 /* ************************************************************************* */
@@ -302,6 +338,7 @@ void AKAZEFeatures::Find_Scale_Space_Extrema(std::vector<KeyPoint>& kpts)
           point.class_id = (int)i;
           ratio = (float)fastpow(2, point.octave);
           sigma_size_ = fRound(point.size / ratio);
+        
           point.pt.x = static_cast<float>(jx);
           point.pt.y = static_cast<float>(ix);
 
@@ -442,8 +479,7 @@ void AKAZEFeatures::Do_Subpixel_Refinement(std::vector<KeyPoint>& kpts)
       kpts[i].pt.x *= power;
       kpts[i].pt.y *= power;
       kpts[i].angle = 0.0;
-
-      // In OpenCV the size of a keypoint its the diameter
+	  // In OpenCV the size of a keypoint its the diameter
       kpts[i].size *= 2.0f;
     }
     // Delete the point since its not stable
@@ -714,7 +750,7 @@ void AKAZEFeatures::Compute_Descriptors(std::vector<KeyPoint>& kpts, Mat& desc)
 
   // Allocate memory for the matrix with the descriptors
   if (options_.descriptor < AKAZE::DESCRIPTOR_MLDB_UPRIGHT) {
-    desc = Mat::zeros((int)kpts.size(), 64, CV_32FC1);
+    desc = Mat::zeros((int)kpts.size(), 128, CV_32FC1); // nahum_dbg(2) 10/12/15
   }
   else {
     // We use the full length binary descriptor -> 486 bits
@@ -737,7 +773,7 @@ void AKAZEFeatures::Compute_Descriptors(std::vector<KeyPoint>& kpts, Mat& desc)
     break;
     case AKAZE::DESCRIPTOR_KAZE:
     {
-      parallel_for_(Range(0, (int)kpts.size()), MSURF_Descriptor_64_Invoker(kpts, desc, evolution_));
+     parallel_for_(Range(0, (int)kpts.size()), MSURF_Descriptor_64_Invoker(kpts, desc, evolution_));
     }
     break;
     case AKAZE::DESCRIPTOR_MLDB_UPRIGHT: // Upright descriptors, not invariant to rotation
@@ -766,10 +802,163 @@ void AKAZEFeatures::Compute_Descriptors(std::vector<KeyPoint>& kpts, Mat& desc)
  * @note The orientation is computed using a similar approach as described in the
  * original SURF method. See Bay et al., Speeded Up Robust Features, ECCV 2006
  */
+float find_second_max(KeyPoint &kpt,float *mm,float *tt,int mmax,float ymax_first)
+	 {
+		
+	 float x0,y0,x1,y1,x2,y2,a,b,c,xmax,ymax;
+		  float max=0;
+		   int idxMax=0;
+		   int k=1;
+		   int flag_in=0;
+		  while(k<=43)
+		  {
+			  y0=mm[k-1];
+			  y1=mm[k];
+			  y2=mm[k+1];
+			 
+			  if((y0<y1)&&(y2<y1)&&(max<y1)&&(k!=mmax+1))
+			  {
+				 max=y1;
+				idxMax=k-1;
+				flag_in=1;
+			  }
+			  k++;
+		  }
+  if(flag_in==1)
+	{
+	 x0=tt[idxMax];
+	 y0=mm[idxMax];
+	 x1=tt[idxMax+1];
+	 y1=mm[idxMax+1];
+	 x2=tt[idxMax+2];
+	 y2=mm[idxMax+2];
+
+      a=((x1-x0)*(y2-y1)-(x2-x1)*(y1-y0))/((x2-x0)*(x1-x0)*(x2-x1));
+	  if(abs(a)>0)
+	  {
+	  b=(y1-y0)/(x1-x0)-a*(x1+x0);
+	  c=y1-a*x1*x1-b*x1;
+	  xmax=-b/(2*a);
+	  ymax=c-b*b/(4*a);
+	  if(xmax>2*CV_PI)xmax=2*CV_PI-xmax;
+	  if(xmax<0)xmax=2*CV_PI+xmax;
+	  kpt.response=xmax;
+	  }
+	  else
+	  {
+		  ymax=0;
+	  }
+   }
+  else
+    {
+     kpt.response=0;
+     ymax=0;
+    }
+  if(ymax>ymax_first)
+  {
+	  float temp=kpt.angle;
+	  kpt.angle=kpt.response;
+	  kpt.response=temp;
+  }
+ 
+if((kpt.response>0)&&(ymax/ymax_first<0.95))
+			kpt.response=0;
+return ymax;
+
+	 }
+void find_min_max(KeyPoint &kpt,float *maxx,float *tetax,int idxMax,int max)
+{
+	float x0,y0,x1,y1,x2,y2,a,b,c,xmax,ymax;
+	 int mmax=max;
+	 
+	 float *mm=new float[44];
+	 mm[0]=maxx[41];
+	 mm[43]=maxx[0];
+	 float *tt=new float[44];
+	tt[0]=tetax[41];
+	tt[43]=tetax[0];
+	 for(int i=0;i<42;i++)
+		  {
+			  mm[i+1]=maxx[i];
+			  tt[i+1]=tetax[i];
+			 
+		  }
+	  if(tt[0]>tt[1])tt[0]=tt[0]-2*CV_PI;
+	  if(tt[43]<tt[42])tt[43]=2*CV_PI-tt[43];
+	 x0=tt[idxMax];
+	 y0=mm[idxMax];
+	 x1=tt[idxMax+1];
+	 y1=mm[idxMax+1];
+	 x2=tt[idxMax+2];
+	 y2=mm[idxMax+2];
+
+      a=((x1-x0)*(y2-y1)-(x2-x1)*(y1-y0))/((x2-x0)*(x1-x0)*(x2-x1));
+	  b=(y1-y0)/(x1-x0)-a*(x1+x0);
+	  c=y1-a*x1*x1-b*x1;
+	  xmax=-b/(2*a);
+	  ymax=c-b*b/(4*a);
+	  if(xmax>2*CV_PI)xmax=2*CV_PI-xmax;
+	  if(xmax<0)xmax=2*CV_PI+xmax;
+	 
+	  if((abs(kpt.angle-xmax)<1.5)&&(ymax>0))
+	  {
+	     kpt.angle=xmax;
+	  //  float ymax_second= find_second_max(kpt,mm,tt, idxMax,ymax);
+		
+		 
+	/*	 int ratio=(int)((float)MIN(ymax,ymax_second)/((float)MAX(ymax,ymax_second))*65536+.5);
+		 
+	     if((abs(xmax-kpt.response)<0.15)&&(abs(ymax-ymax_second)/ymax<0.1))
+		 {
+			 float yavg=(ymax+ymax_second)/2;
+			 a=(ymax-ymax_second)/(xmax-kpt.response);
+			 b=ymax_second-kpt.response*(ymax-ymax_second)/(xmax-kpt.response);
+			 float xavg=(yavg-b)/a;
+		     kpt.angle=xavg;
+			 kpt.response=0;
+		 }
+		  
+		  if((kpt.response>0)&&(ratio>6536))
+		  {
+			  
+			  if((kpt.angle-kpt.response)>CV_PI)
+			  {
+			      kpt.response=kpt.angle-kpt.response-CV_PI;
+				
+			  }
+			 if((kpt.angle-kpt.response)<-CV_PI)
+			      kpt.response=kpt.angle-kpt.response+CV_PI;
+
+			   if(kpt.response>CV_PI)kpt.response=2*CV_PI-kpt.response;
+			  kpt.octave=ratio;
+			  int aa=1;
+		  }
+		  else
+		  {
+			  kpt.response=0;
+            int aa=1;
+		  }
+
+	  }
+	  else
+	  {
+		  kpt.response=0;
+		  int aa=1;
+		 */
+	  }
+	 delete []mm;
+	 delete []tt;
+	 
+}
+
 void AKAZEFeatures::Compute_Main_Orientation(KeyPoint& kpt, const std::vector<TEvolution>& evolution_)
 {
     /* ************************************************************************* */
     /// Lookup table for 2d gaussian (sigma = 2.5) where (0,0) is top left and (6,6) is bottom right
+	kpt.angle=kpt.angle*(3.14159265/180.0);
+	if(kpt.response>0)
+	{
+
     static const float gauss25[7][7] =
     {
         { 0.02546481f, 0.02350698f, 0.01849125f, 0.01239505f, 0.00708017f, 0.00344629f, 0.00142946f },
@@ -781,30 +970,45 @@ void AKAZEFeatures::Compute_Main_Orientation(KeyPoint& kpt, const std::vector<TE
         { 0.00142946f, 0.00131956f, 0.00103800f, 0.00069579f, 0.00039744f, 0.00019346f, 0.00008024f }
     };
 
-  int ix = 0, iy = 0, idx = 0, s = 0, level = 0;
+  int ix = 0, iy = 0, idx = 0,  level = 0;
+  float s=0;
   float xf = 0.0, yf = 0.0, gweight = 0.0, ratio = 0.0;
   const int ang_size = 109;
   float resX[ang_size], resY[ang_size], Ang[ang_size];
   const int id[] = { 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6 };
-
+  float max1=0;
+  float teta1=0;
+  float teta=0;
+  float rat=0;
+  int idxMax=0;
+ 
+  float maxx[42]={0};
+  float tetax[42]={0};
+ 
   // Variables for computing the dominant direction
   float sumX = 0.0, sumY = 0.0, max = 0.0, ang1 = 0.0, ang2 = 0.0;
-
+   level = kpt.class_id;
+  float w=evolution_[level].Lx.cols;
+  float h=evolution_[level].Lx.rows;
   // Get the information from the keypoint
-  level = kpt.class_id;
+ 
   ratio = (float)(1 << evolution_[level].octave);
-  s = fRound(0.5f*kpt.size / ratio);
+  s = (0.5f*kpt.size / ratio);
   xf = kpt.pt.x / ratio;
   yf = kpt.pt.y / ratio;
 
   // Calculate derivatives responses for points within radius of 6*scale
-  for (int i = -6; i <= 6; ++i) {
-    for (int j = -6; j <= 6; ++j) {
-      if (i*i + j*j < 36) {
-        iy = fRound(yf + j*s);
-        ix = fRound(xf + i*s);
+  for (int i = -6; i <= 6; ++i)
+  {
+    for (int j = -6; j <= 6; ++j) 
+	{
+      if (i*i + j*j < 36) 
+	  {
+        iy = MIN(MAX(fRound(yf + j*s),0),h-1);
+        ix = MIN(MAX(fRound(xf + i*s),0),w-1);
 
-        gweight = gauss25[id[i + 6]][id[j + 6]];
+      // gweight = gauss25[id[i + 6]][id[j + 6]];
+		gweight=1.0;
         resX[idx] = gweight*(*(evolution_[level].Lx.ptr<float>(iy)+ix));
         resY[idx] = gweight*(*(evolution_[level].Ly.ptr<float>(iy)+ix));
 
@@ -814,34 +1018,58 @@ void AKAZEFeatures::Compute_Main_Orientation(KeyPoint& kpt, const std::vector<TE
   }
   hal::fastAtan2(resY, resX, Ang, ang_size, false);
   // Loop slides pi/3 window around feature point
-  for (ang1 = 0; ang1 < (float)(2.0 * CV_PI); ang1 += 0.15f) {
+  idx=0;
+  for (ang1 = 0; ang1 < (float)(2.0 * CV_PI); ang1 += 0.15)
+  {
     ang2 = (ang1 + (float)(CV_PI / 3.0) >(float)(2.0*CV_PI) ? ang1 - (float)(5.0*CV_PI / 3.0) : ang1 + (float)(CV_PI / 3.0));
     sumX = sumY = 0.f;
-
-    for (int k = 0; k < ang_size; ++k) {
+	float sum=0;
+    for (int k = 0; k < ang_size; ++k)
+	{
       // Get angle from the x-axis of the sample point
       const float & ang = Ang[k];
 
       // Determine whether the point is within the window
-      if (ang1 < ang2 && ang1 < ang && ang < ang2) {
+      if (ang1 < ang2 && ang1 < ang && ang < ang2)
+	  {
         sumX += resX[k];
         sumY += resY[k];
+		
       }
       else if (ang2 < ang1 &&
-               ((ang > 0 && ang < ang2) || (ang > ang1 && ang < 2.0f*CV_PI))) {
+               ((ang > 0 && ang < ang2) || (ang > ang1 && ang < 2.0f*CV_PI)))
+	  {
         sumX += resX[k];
         sumY += resY[k];
+		
       }
-    }
-
+    }//for k
+	maxx[idx]=sumX*sumX + sumY*sumY;
+	tetax[idx]=getAngle(sumX, sumY);
+	
+	
     // if the vector produced from this window is longer than all
     // previous vectors then this forms the new dominant direction
-    if (sumX*sumX + sumY*sumY > max) {
+    if (sumX*sumX + sumY*sumY > max)
+   	{
       // store largest orientation
+	 
+	
+	 idxMax=idx;
       max = sumX*sumX + sumY*sumY;
-      kpt.angle = getAngle(sumX, sumY) * 180.f / static_cast<float>(CV_PI);
+      kpt.angle = getAngle(sumX, sumY);
+		    
     }
+	idx++;
   }
+ find_min_max(kpt,maxx,tetax, idxMax,max);
+//  kpt.response=teta1;
+//  kpt.octave=(int)(rat*65536+.5);
+ 
+	
+ 
+}//if kpts.response>0
+
 }
 
 /* ************************************************************************* */
@@ -876,7 +1104,8 @@ void MSURF_Upright_Descriptor_64_Invoker::Get_MSURF_Upright_Descriptor_64(const 
 
   // Get the information from the keypoint
   ratio = (float)(1 << kpt.octave);
-  scale = fRound(0.5f*kpt.size / ratio);
+ 
+  scale = (0.5f*kpt.size / ratio);
   level = kpt.class_id;
   yf = kpt.pt.y / ratio;
   xf = kpt.pt.x / ratio;
@@ -967,43 +1196,72 @@ void MSURF_Upright_Descriptor_64_Invoker::Get_MSURF_Upright_Descriptor_64(const 
   }
 }
 
-/* ************************************************************************* */
-/**
- * @brief This method computes the descriptor of the provided keypoint given the
- * main orientation of the keypoint
- * @param kpt Input keypoint
- * @param desc Descriptor vector
- * @note Rectangular grid of 24 s x 24 s. Descriptor Length 64. The descriptor is inspired
- * from Agrawal et al., CenSurE: Center Surround Extremas for Realtime Feature Detection and Matching,
- * ECCV 2008
- */
-void MSURF_Descriptor_64_Invoker::Get_MSURF_Descriptor_64(const KeyPoint& kpt, float *desc) const {
-
-  float dx = 0.0, dy = 0.0, mdx = 0.0, mdy = 0.0, gauss_s1 = 0.0, gauss_s2 = 0.0;
-  float rx = 0.0, ry = 0.0, rrx = 0.0, rry = 0.0, len = 0.0, xf = 0.0, yf = 0.0, ys = 0.0, xs = 0.0;
+void MSURF_Descriptor_64_Invoker::Get_MSURF_Descriptor_64(const KeyPoint& kpt, float *desc) 
+ const {
+	/*static float m_data[128]=
+                 {-0.00338813546 ,  -0.00349699124, -0.000447582192 , -0.000736448448  ,   0.0558114573  ,   0.0588222928   ,  0.0596071407   ,  0.0741576180,
+	             -0.00170306512 ,  -0.00239867577 , -0.00354001159  , -0.00477006473  ,   0.0485182144   ,  0.0628645942   ,  0.0643333718   ,  0.0728200227,
+				  0.00172934704 ,   0.00245559867 ,  -0.00458895974 , -0.00326277362  ,   0.0489259213  ,   0.0625307038   ,  0.0731955767   ,  0.0637607574 ,
+				  0.00319408416  ,  0.00329247466 , -0.000636671495 , -0.000397112395  ,   0.0559423454  ,   0.0583358109  ,   0.0737030879   ,  0.0594402775,
+				 -0.00475469930 ,  -0.00221227808 ,  0.0177943688   ,  0.0202471334  ,   0.0767624602  ,   0.0492728017  ,   0.0789484978   ,  0.0949267522, 
+				 -0.00318503729 ,  -0.00176860031 ,  0.0410723016   ,  0.0445662253  ,   0.0713574216  ,   0.0461750478  ,    0.101950616   ,   0.110943951,
+				  0.00356236962 ,   0.00179772254 ,  0.0413943492   ,  0.0388696454  ,   0.0726023763   ,  0.0460009351   ,   0.109013438    , 0.0984543115,
+				  0.00446776533 ,   0.00203372119 ,  0.0193022173   ,  0.0168810748  ,   0.0758306235  ,   0.0492330641   ,  0.0933979824    , 0.0779747367 ,
+				  0.00802469812 ,   0.00260450039 ,  0.0207315050   ,  0.0144363381  ,   0.0763439983  ,   0.0516602136   ,  0.0972985625   ,  0.0755338296,
+				  0.00489012105 ,   0.00220368942 ,  0.0393115617   ,   0.0342139155  ,   0.0694338009  ,   0.0492064208    ,  0.109608091   ,  0.0970784202,
+                 -0.00564122712 ,  -0.00222592661 ,   0.0322282538  ,   0.0370427705  ,   0.0707237646  ,   0.0491049923   ,  0.0934700295   ,   0.108702354 ,
+				 -0.00757697783 ,  -0.00236307154 ,   0.0138388239  ,   0.0197107866  ,   0.0755087882  ,   0.0515678190   ,  0.0748301595    , 0.0955438167,
+				  0.00414472353 ,   0.00401799707 ,  -0.000262248970 , -0.000122994810  ,   0.0574738570  ,   0.0605679117   ,  0.0766846463    , 0.0598674305,
+				  0.00203560479 ,   0.00255784020 ,  -0.00388567569 ,  -0.00263729529  ,   0.0505272187  ,   0.0650754720   ,  0.0761063918    , 0.0662502870,
+				 -0.00218184269 ,  -0.00270466111 ,  -0.00238398882  , -0.00379783520  ,   0.0509907901   ,  0.0647658631   ,  0.0654325262    , 0.0765611678,
+				 -0.00396828074  , -0.00380070461 ,-4.43073732e-005 , -0.000203892385  ,   0.0576683022   ,  0.0599504635    , 0.0597355925    , 0.0761346370 };
+	*/
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  float dxP = 0.0,dxM = 0.0, dyP = 0.0,dyM = 0.0, mdxP = 0.0, mdxM = 0.0,mdyP = 0.0, mdyM = 0.0,gauss_s1 = 0.0, gauss_s2 = 0.0;
+   float rx = 0.0, ry = 0.0, rrx = 0.0, rry = 0.0, len = 0.0, xf = 0.0, yf = 0.0, ys = 0.0, xs = 0.0;
   float sample_x = 0.0, sample_y = 0.0, co = 0.0, si = 0.0, angle = 0.0;
   float fx = 0.0, fy = 0.0, ratio = 0.0, res1 = 0.0, res2 = 0.0, res3 = 0.0, res4 = 0.0;
   int x1 = 0, y1 = 0, x2 = 0, y2 = 0, sample_step = 0, pattern_size = 0;
   int kx = 0, ky = 0, i = 0, j = 0, dcount = 0;
-  int scale = 0, dsize = 0, level = 0;
-
+  int  dsize = 0, level = 0;
+  float scale;
   // Subregion centers for the 4x4 gaussian weighting
   float cx = -0.5f, cy = 0.5f;
-
+ 
   const std::vector<TEvolution>& evolution = *evolution_;
 
   // Set the descriptor size and the sample and pattern sizes
-  dsize = 64;
+  dsize = 128;
+//  if(abs(kpt.response>0.1))
+//  {
   sample_step = 5;
   pattern_size = 12;
 
   // Get the information from the keypoint
   ratio = (float)(1 << kpt.octave);
-  scale = fRound(0.5f*kpt.size / ratio);
-  angle = (kpt.angle * static_cast<float>(CV_PI)) / 180.f;
+ 
+
+ // ratio=(float) ( 1<<(kpt.class_id>>2));
+  scale = (0.5f*kpt.size / ratio);
+ 
+ 
   level = kpt.class_id;
+  float  w=evolution[level].Lx.cols;
+  float  h=evolution[level].Lx.rows;
   yf = kpt.pt.y / ratio;
   xf = kpt.pt.x / ratio;
+ // float del_angle=0.1;
+ // int consistency_flag=1;
+ // unsigned long index=0,index1=0;
+//	unsigned char sign=0,sign1=0;
+//	static float rr[3]={.9,1.0,1.1};
+ //for (int ii=0;ii<3;ii++)
+// {
+   angle = kpt.angle;
+   dcount=0;
+ //  float scale1=scale*rr[ii];
+  cx = -0.5f, cy = 0.5f;
+
   co = cos(angle);
   si = sin(angle);
 
@@ -1011,15 +1269,20 @@ void MSURF_Descriptor_64_Invoker::Get_MSURF_Descriptor_64(const KeyPoint& kpt, f
 
   // Calculate descriptor for this interest point
   // Area of size 24 s x 24 s
-  while (i < pattern_size) {
+ 
+  while (i < pattern_size)
+  {
     j = -8;
     i = i - 4;
 
     cx += 1.0f;
     cy = -0.5f;
 
-    while (j < pattern_size) {
-      dx = dy = mdx = mdy = 0.0;
+    while (j < pattern_size)
+	{
+      dxP = dyP = mdxP = mdyP = 0.0;
+	  dxM = dyM = mdxM = mdyM = 0.0;
+	 
       cy += 1.0f;
       j = j - 4;
 
@@ -1029,20 +1292,23 @@ void MSURF_Descriptor_64_Invoker::Get_MSURF_Descriptor_64(const KeyPoint& kpt, f
       xs = xf + (-kx*scale*si + ky*scale*co);
       ys = yf + (kx*scale*co + ky*scale*si);
 
-      for (int k = i; k < i + 9; ++k) {
-        for (int l = j; l < j + 9; ++l) {
+      for (int k = i; k < i + 9; ++k)
+	   {
+        for (int l = j; l < j + 9; ++l) 
+		{
           // Get coords of sample point on the rotated axis
           sample_y = yf + (l*scale*co + k*scale*si);
           sample_x = xf + (-l*scale*si + k*scale*co);
 
           // Get the gaussian weighted x and y responses
           gauss_s1 = gaussian(xs - sample_x, ys - sample_y, 2.5f*scale);
+		 
+          y1 = MIN(MAX(fRound(sample_y - 0.5f),0),h-1);
+          x1 = MIN(MAX(fRound(sample_x - 0.5f),0),w-1);
 
-          y1 = fRound(sample_y - 0.5f);
-          x1 = fRound(sample_x - 0.5f);
-
-          y2 = fRound(sample_y + 0.5f);
-          x2 = fRound(sample_x + 0.5f);
+          y2 = MIN(MAX(fRound(sample_y + 0.5f),0),h-1);
+          x2 = MIN(MAX(fRound(sample_x + 0.5f),0),w-1);
+		  
 
           fx = sample_x - x1;
           fy = sample_y - y1;
@@ -1064,21 +1330,48 @@ void MSURF_Descriptor_64_Invoker::Get_MSURF_Descriptor_64(const KeyPoint& kpt, f
           rrx = gauss_s1*(-rx*si + ry*co);
 
           // Sum the derivatives to the cumulative descriptor
-          dx += rrx;
-          dy += rry;
-          mdx += fabs(rrx);
-          mdy += fabs(rry);
+		 // sum_dx+=rrx;
+		//  sum_dy+=rry;
+	  if(rry>=0)
+		  {
+           dxP += rrx;
+		   mdxP += fabs(rrx);
+		  }
+		  else
+		  {
+            dxM += rrx;
+		    mdxM += fabs(rrx);
+		  }
+		  
+		 if(rrx>=0)
+		  {
+           dyP += rry;
+		   mdyP += fabs(rry);
+		  }
+		  else
+		  {
+            dyM += rry;
+		    mdyM += fabs(rry);
+		  }	
+          
         }
       }
 
       // Add the values to the descriptor vector
-      gauss_s2 = gaussian(cx - 2.0f, cy - 2.0f, 1.5f);
-      desc[dcount++] = dx*gauss_s2;
-      desc[dcount++] = dy*gauss_s2;
-      desc[dcount++] = mdx*gauss_s2;
-      desc[dcount++] = mdy*gauss_s2;
+    // gauss_s2 = gaussian(cx - 2.0f, cy - 2.0f, 1.5f);
 
-      len += (dx*dx + dy*dy + mdx*mdx + mdy*mdy)*gauss_s2*gauss_s2;
+	
+	  desc[dcount++] = dxP;
+	  desc[dcount++] = dxM;
+      desc[dcount++] = dyP;
+	  desc[dcount++] = dyM;
+      desc[dcount++] = mdxP;
+	  desc[dcount++] = mdxM;
+      desc[dcount++] = mdyP;
+	  desc[dcount++] = mdyM;
+	 
+ //len += (dxP*dxP + dxM*dxM +dyP*dyP + dyM*dyM + mdxP*mdxP + mdxM*mdxM +mdyP*mdyP+mdyM*mdyM)*gauss_s2*gauss_s2;
+   len += (dxP*dxP + dxM*dxM +dyP*dyP + dyM*dyM + mdxP*mdxP + mdxM*mdxM +mdyP*mdyP+mdyM*mdyM);
 
       j += 9;
     }
@@ -1089,11 +1382,31 @@ void MSURF_Descriptor_64_Invoker::Get_MSURF_Descriptor_64(const KeyPoint& kpt, f
   // convert to unit vector
   len = sqrt(len);
 
-  for (i = 0; i < dsize; i++) {
-    desc[i] /= len;
-  }
-}
-
+    for (i = 0; i < dsize; i++)
+     {
+       desc[i] /= len;
+     }
+	///////////////////////////////////////////////////////////////////////////////
+	/*
+	 for (i = 0; i < dsize; i++)
+     {
+      sign=0;
+	  index=find_index(desc,sign);
+     }
+	 
+	 if(ii>0)
+	 {
+	 if((index1!=index)||(sign1!=sign))
+		 consistency_flag=0;
+	 }
+	 index1=index;
+	 sign1=sign;
+	 }// ii loop
+	 if(consistency_flag==1)
+    int a=1;
+	*/
+ //////////////////////////////////////////////////////////////////////////////////
+ }
 /* ************************************************************************* */
 /**
  * @brief This method computes the rupright descriptor (not rotation invariant) of
@@ -1406,9 +1719,8 @@ void MLDB_Full_Descriptor_Invoker::Get_MLDB_Full_Descriptor(const KeyPoint& kpt,
   float scale = (float)fRound(0.5f*kpt.size / ratio);
   float xf = kpt.pt.x / ratio;
   float yf = kpt.pt.y / ratio;
-  float angle = (kpt.angle * static_cast<float>(CV_PI)) / 180.f;
-  float co = cos(angle);
-  float si = sin(angle);
+  float co = cos(kpt.angle);
+  float si = sin(kpt.angle);
   int pattern_size = options_->descriptor_pattern_size;
 
   int dpos = 0;
@@ -1442,7 +1754,7 @@ void MLDB_Descriptor_Subset_Invoker::Get_MLDB_Descriptor_Subset(const KeyPoint& 
   // Get the information from the keypoint
   float ratio = (float)(1 << kpt.octave);
   int scale = fRound(0.5f*kpt.size / ratio);
-  float angle = (kpt.angle * static_cast<float>(CV_PI)) / 180.f;
+  float angle = kpt.angle;
   int level = kpt.class_id;
   float yf = kpt.pt.y / ratio;
   float xf = kpt.pt.x / ratio;

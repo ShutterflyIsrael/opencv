@@ -57,6 +57,8 @@ namespace cv
 {
     using namespace std;
 
+    inline bool sortByResponse(const KeyPoint &lhs, const KeyPoint &rhs) { return lhs.response > rhs.response; };
+
     class AKAZE_Impl : public AKAZE
     {
     public:
@@ -162,13 +164,46 @@ namespace cv
             }
         }
 
+void remove_dublicated_keys(vector<KeyPoint> &keypoints,float min_dist)
+{
+   vector<KeyPoint> keypoints1;
+   KeyPoint kpt1,kpt2;
+   float x1,y1,x2,y2,dist;
+   for(int i=0;i<keypoints.size()-1;i++)
+   {
+	kpt1=keypoints[i];
+	x1=kpt1.pt.x;
+	y1=kpt1.pt.y;
+	
+	if( x1>=0)
+	{
+		keypoints1.push_back(kpt1);
+	}
+	else
+	{
+		continue;
+	}
+        for(int j=i+1;j<keypoints.size();j++)
+	{
+		kpt2=keypoints[j];
+		x2=kpt2.pt.x;
+		y2=kpt2.pt.y;
+		dist=sqrt((x1-x2)*(x1-x2)+(y1-y2)*(y1-y2));
+		if(dist<min_dist)keypoints[j].pt.x=-1;
+	}
+    }
+    keypoints.resize(0);
+    keypoints.insert(keypoints.begin(), keypoints1.begin(), keypoints1.end());
+}
+
+
         void detectAndCompute(InputArray image, InputArray mask,
                               std::vector<KeyPoint>& keypoints,
                               OutputArray descriptors,
                               bool useProvidedKeypoints)
         {
             Mat img = image.getMat();
-            if (img.channels() > 1)
+            if (img.type() != CV_8UC1)
                 cvtColor(image, img, COLOR_BGR2GRAY);
 
             Mat img1_32;
@@ -204,13 +239,18 @@ namespace cv
             {
                 KeyPointsFilter::runByPixelsMask(keypoints, mask.getMat());
             }
-
+ 
+	if(keypoints.size()>5)
+	{
+		sort(keypoints.begin(),keypoints.end(),sortByResponse);
+		//remove_dublicated_keys(keypoints,1.0);
+	}
             if( descriptors.needed() )
             {
                 Mat& desc = descriptors.getMatRef();
                 impl.Compute_Descriptors(keypoints, desc);
 
-                CV_Assert((!desc.rows || desc.cols == descriptorSize()));
+             //   CV_Assert((!desc.rows || desc.cols == descriptorSize()));
                 CV_Assert((!desc.rows || (desc.type() == descriptorType())));
             }
         }
