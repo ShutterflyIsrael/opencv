@@ -240,11 +240,17 @@ void remove_dublicated_keys(vector<KeyPoint> &keypoints,float min_dist)
                 KeyPointsFilter::runByPixelsMask(keypoints, mask.getMat());
             }
  
-	if(keypoints.size()>5)
-	{
-		sort(keypoints.begin(),keypoints.end(),sortByResponse);
-		//remove_dublicated_keys(keypoints,1.0);
-	}
+            if(keypoints.size()>5)
+            {
+                sort(keypoints.begin(),keypoints.end(),sortByResponse);
+                //remove_dublicated_keys(keypoints,1.0);
+            }
+
+            if (keypoints.size() > 1500) 
+            {
+                keypoints.resize(1500);
+            }
+
             if( descriptors.needed() )
             {
                 Mat& desc = descriptors.getMatRef();
